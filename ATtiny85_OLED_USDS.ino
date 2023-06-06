@@ -2,9 +2,25 @@
 #include "OLED.h"
 #include "GlyphsOnQuarter.h"
 
-static byte constexpr OLED_ADDRESS = 0x3C;
-static byte constexpr USDS_ADDRESS = 0x57;
+struct OLED_DEVICE {
+  static constexpr uint8_t ADDRESS { 0x3C };
+  static constexpr USI_TWI_Delay tHSTART { 0 };
+  static constexpr USI_TWI_Delay tSSTOP { 0 };
+  static constexpr USI_TWI_Delay tIDLE { .6 };
+  static constexpr USI_TWI_Delay tPRE_SCL_HIGH { 0 };
+  static constexpr USI_TWI_Delay tPOST_SCL_HIGH { 0 };
+  static constexpr USI_TWI_Delay tPOST_TRANSFER { 0 };
+};
 
+struct USDS_DEVICE {
+  static constexpr uint8_t ADDRESS { 0x57 };
+  static constexpr USI_TWI_Delay tHSTART { 5 };
+  static constexpr USI_TWI_Delay tSSTOP { 0 };
+  static constexpr USI_TWI_Delay tIDLE { 5 };
+  static constexpr USI_TWI_Delay tPRE_SCL_HIGH { 5 };
+  static constexpr USI_TWI_Delay tPOST_SCL_HIGH { 5 };
+  static constexpr USI_TWI_Delay tPOST_TRANSFER { 0 };
+};
 
 static int constexpr MICROS_PER_CM = 29;
 
@@ -25,7 +41,7 @@ static void flashN(uint8_t number) {
   }
 }
 
-// Report error when we're unusure the display is accessible.
+// Report error when we're unsure the display is accessible.
 static void flashError(I2C::Status status) {
   if (status.errorlevel) {
     delay(300);
@@ -39,7 +55,7 @@ static void flashError(I2C::Status status) {
 // Report error when there's a good chance the display is accessible.
 static void displayError(I2C::Status status) {
   if (status.errorlevel) {
-    auto chat = OLED::QuarterChat{OLED_ADDRESS, 3};
+    auto chat = OLED::QuarterChat<OLED_DEVICE> {3};
     GlyphsOnQuarter::send(chat, Glyph::overflow);
     GlyphsOnQuarter::send3digits(chat, status.errorlevel);
     GlyphsOnQuarter::send(chat, Glyph::overflow);
@@ -54,7 +70,7 @@ static void displayError(I2C::Status status) {
 static void displayValue(uint8_t quarter, int value) {
   uint8_t constexpr content_width = GlyphsOnQuarter::WIDTH_4DIGITS;
   uint8_t const displayed_width = quarter == 0 ? OLED::WIDTH : content_width;
-  auto chat = OLED::QuarterChat{OLED_ADDRESS, quarter, 0, uint8_t(displayed_width - 1)};
+  auto chat = OLED::QuarterChat<OLED_DEVICE> {quarter, 0, uint8_t(displayed_width - 1)};
   GlyphsOnQuarter::send4digits(chat, value);
   if (quarter == 0) {
     chat.sendSpacing(OLED::WIDTH - content_width - 2);
@@ -71,7 +87,7 @@ void setup() {
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, HIGH);
   USI_TWI_Master_Initialise();
-  auto err = OLED::Chat(OLED_ADDRESS, 0)
+  auto err = OLED::Chat<OLED_DEVICE>(0)
              .init()
              .set_addressing_mode(OLED::VerticalAddressing)
              .set_column_address()
@@ -98,15 +114,16 @@ void loop() {
     pinMode(pingPin, INPUT);
     auto duration = pulseIn(pingPin, HIGH, 200000ul);
   */
-  displayError(I2C::Chat(USDS_ADDRESS, 3).send(0x01).stop());
-  delay(200);
+  displayError(I2C::Chat<USDS_DEVICE>(7).send(0x01).stop());
+  delay(160); // 158 is enough
 
-  union {
-    uint8_t buf[3];
-    unsigned long distance;
-  } data;
-  data.distance = 0;
-  USI_TWI_Master_Receive(USDS_ADDRESS, data.buf, sizeof data.buf);
-  displayValue(0, data.distance);
-  delay(1000);
+  uint8_t buf[3];
+  auto err = USI_TWI_Master_Receive<USDS_DEVICE>(buf, sizeof buf);
+  if (err) {
+    displayError(I2C::Status { err, 15 });
+  } else {
+    uint32_t distance = (uint32_t(buf[0]) << 16) | (uint32_t(buf[1]) << 8) | uint32_t(buf[2]);
+    displayValue(0, distance / 10000); // ųm to cm
+  }
+  delay(500);
 }

@@ -1,4 +1,5 @@
 #pragma once
+#include <math.h>
 
 /*****************************************************************************
   Based on https://github.com/adafruit/TinyWireM
@@ -23,10 +24,9 @@
 
 // Note these have been renumbered from the Atmel Apps Note. Most likely errors
 // are now lowest numbers so they're easily recognized as LED flashes.
-enum USI_TWI_ErrorLevel {
+enum USI_TWI_ErrorLevel : unsigned char {
   USI_TWI_OK = 0,
-  USI_TWI_NO_SCL_HI = 11, //!< SCL did not go high when instructed to.
-  USI_TWI_NO_SCL_LO = 12, //!< SCL did not go low when instructed to.
+  USI_TWI_NO_SCL_HI = 9, //!< SCL did not go high when released.
   USI_TWI_ME_START_CON = 8, //!< Missing Expected Start Condition
   USI_TWI_UE_START_CON = 7, //!< Unexpected Start Condition
   USI_TWI_UE_STOP_CON = 6,  //!< Unexpected Stop Condition
@@ -100,8 +100,66 @@ enum USI_TWI_ErrorLevel {
 
 //********** Prototypes **********//
 
+enum USI_TWI_Direction : bool {
+  USI_TWI_SEND = 0,
+  USI_TWI_RCVE = 1
+};
+
+// First byte to be transmitted after a start condition.
+static unsigned char constexpr USI_TWI_Prefix(USI_TWI_Direction direction, unsigned char address) {
+  return address << USI_TWI_ADR_BITS | direction << USI_TWI_READ_BIT;
+}
+
+class USI_TWI_Delay {
+    unsigned long const cycles;
+
+  public:
+    constexpr USI_TWI_Delay(double us)
+      : cycles(us <= 0 ? 0 : ceil(us / 1e6 * F_CPU) - 1)
+        // - 1 because whatever we did before or do next takes at least 1 cycle to have effect
+    {}
+
+    inline void wait() const {
+      __builtin_avr_delay_cycles(cycles);
+    }
+};
+
+/* Device concept:
+struct Device {
+  static constexpr uint8_t ADDRESS;
+  static constexpr USI_TWI_Delay tHSTART;
+  static constexpr USI_TWI_Delay tSSTOP;
+  static constexpr USI_TWI_Delay tIDLE;
+  static constexpr USI_TWI_Delay tPRE_SCL_HIGH;
+  static constexpr USI_TWI_Delay tPOST_SCL_HIGH;
+  static constexpr USI_TWI_Delay tPOST_TRANSFER;
+};
+*/
+
 void               USI_TWI_Master_Initialise();
-USI_TWI_ErrorLevel USI_TWI_Master_Start_Sending(unsigned char address);
-USI_TWI_ErrorLevel USI_TWI_Master_Send(unsigned char msg);
-USI_TWI_ErrorLevel USI_TWI_Master_Receive(unsigned char address, unsigned char* buf, unsigned char len);
+
+template <typename Device>
+static USI_TWI_ErrorLevel USI_TWI_Master_Start();
+
+template <typename Device>
+static USI_TWI_ErrorLevel USI_TWI_Master_Transmit(unsigned char msg, bool isAddress);
+
+template <typename Device>
+USI_TWI_ErrorLevel USI_TWI_Master_Start_Sending() {
+  auto err = USI_TWI_Master_Start<Device>();
+  if (err) return err;
+  return USI_TWI_Master_Transmit<Device>(USI_TWI_Prefix(USI_TWI_SEND, Device::ADDRESS), true);
+}
+
+template <typename Device>
+USI_TWI_ErrorLevel USI_TWI_Master_Send(unsigned char msg) {
+  return USI_TWI_Master_Transmit<Device>(msg, false);
+}
+
+template <typename Device>
+USI_TWI_ErrorLevel USI_TWI_Master_Receive(unsigned char* buf, unsigned char len);
+
+template <typename Device>
 USI_TWI_ErrorLevel USI_TWI_Master_Stop();
+
+#include "USI_TWI_Master.hpp"
