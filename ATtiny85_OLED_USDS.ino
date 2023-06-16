@@ -67,10 +67,13 @@ static void displayError(I2C::Status status) {
 }
 
 static void displayValue(uint8_t quarter, int value) {
-  uint8_t constexpr content_width = GlyphsOnQuarter::DIGITS_WIDTH(4);
+  uint8_t constexpr content_width = GlyphsOnQuarter::DIGIT_WIDTH * 4 + 3 + 2 * Glyph::SEGS;
   uint8_t const displayed_width = quarter == 0 ? OLED::WIDTH : content_width;
   auto chat = OLED::QuarterChat<OLED_DEVICE> {quarter, 0, uint8_t(displayed_width - 1)};
   GlyphsOnQuarter::send4dec(chat, value);
+  chat.sendSpacing(3);
+  GlyphsOnQuarter::sendTo(chat, GlyphPair::cm.left);
+  GlyphsOnQuarter::sendTo(chat, GlyphPair::cm.right);
   if (quarter == 0) {
     chat.sendSpacing(OLED::WIDTH - content_width - 2);
     static bool toggle = 0;
@@ -113,19 +116,6 @@ void setup() {
 }
 
 void loop() {
-  /*
-    pinMode(pingPin, OUTPUT);
-    digitalWrite(trigPin, HIGH);
-    delayMicroseconds(10);
-    digitalWrite(trigPin, LOW);
-    digitalWrite(pingPin, LOW);
-    delayMicroseconds(2);
-    digitalWrite(pingPin, HIGH);
-    delayMicroseconds(5);
-    digitalWrite(pingPin, LOW);
-    pinMode(pingPin, INPUT);
-    auto duration = pulseIn(pingPin, HIGH, 200000ul);
-  */
   displayError(I2C::Chat<USDS_DEVICE>(7).send(1).stop());
 
   digitalWrite(LED_BUILTIN, HIGH);
