@@ -41,37 +41,36 @@ static void flashN(uint8_t number) {
   }
 }
 
-// Report error when we're unsure the display is accessible.
+// Report error when the display isn't set up.
 static void flashError(I2C::Status status) {
   if (status.errorlevel) {
-    delay(300);
-    flashN(status.errorlevel);
-    delay(600);
-    flashN(status.location);
-    delay(900);
-  }
-}
-
-// Report error when there's a good chance the display is accessible.
-static void displayError(I2C::Status status) {
-  if (status.errorlevel) {
-    auto chat = OLED::QuarterChat<OLED_DEVICE> {3};
-    GlyphsOnQuarter::send(chat, Glyph::overflow);
-    GlyphsOnQuarter::send3digits(chat, status.errorlevel);
-    GlyphsOnQuarter::send(chat, Glyph::overflow);
-    GlyphsOnQuarter::send3digits(chat, status.location);
-    GlyphsOnQuarter::send(chat, Glyph::overflow);
     for (;;) {
-      flashError(status);
+      delay(1200);
+      flashN(status.errorlevel);
+      delay(600);
+      flashN(status.location);
     }
   }
 }
 
+// Report error when we think we can display it.
+static void displayError(I2C::Status status) {
+  if (status.errorlevel) {
+    auto chat = OLED::QuarterChat<OLED_DEVICE> {3};
+    GlyphsOnQuarter::sendTo(chat, Glyph::X);
+    GlyphsOnQuarter::send2hex(chat, status.errorlevel);
+    GlyphsOnQuarter::sendTo(chat, Glyph::X);
+    GlyphsOnQuarter::send2hex(chat, status.location);
+    GlyphsOnQuarter::sendTo(chat, Glyph::X);
+    flashError(status);
+  }
+}
+
 static void displayValue(uint8_t quarter, int value) {
-  uint8_t constexpr content_width = GlyphsOnQuarter::WIDTH_4DIGITS;
+  uint8_t constexpr content_width = GlyphsOnQuarter::DIGITS_WIDTH(4);
   uint8_t const displayed_width = quarter == 0 ? OLED::WIDTH : content_width;
   auto chat = OLED::QuarterChat<OLED_DEVICE> {quarter, 0, uint8_t(displayed_width - 1)};
-  GlyphsOnQuarter::send4digits(chat, value);
+  GlyphsOnQuarter::send4dec(chat, value);
   if (quarter == 0) {
     chat.sendSpacing(OLED::WIDTH - content_width - 2);
     static bool toggle = 0;
@@ -81,6 +80,19 @@ static void displayValue(uint8_t quarter, int value) {
     }
   }
   displayError(chat.stop());
+}
+
+static void await_reception(uint8_t buf[], size_t len) {
+  // In practice the module responds in at most 156 ms, depending on the distance measured.
+  for (;;) {
+    delay(10);
+    auto err = USI_TWI_Master_Receive<USDS_DEVICE>(buf, len);
+    switch (err) {
+      case USI_TWI_OK: return;
+      case USI_TWI_NO_ACK_ON_ADDRESS: continue;
+      default: displayError(I2C::Status { err, 15 });
+    }
+  }
 }
 
 void setup() {
@@ -114,16 +126,13 @@ void loop() {
     pinMode(pingPin, INPUT);
     auto duration = pulseIn(pingPin, HIGH, 200000ul);
   */
-  displayError(I2C::Chat<USDS_DEVICE>(7).send(0x01).stop());
-  delay(160); // 158 is enough
+  displayError(I2C::Chat<USDS_DEVICE>(7).send(1).stop());
 
+  digitalWrite(LED_BUILTIN, HIGH);
   uint8_t buf[3];
-  auto err = USI_TWI_Master_Receive<USDS_DEVICE>(buf, sizeof buf);
-  if (err) {
-    displayError(I2C::Status { err, 15 });
-  } else {
-    uint32_t distance = (uint32_t(buf[0]) << 16) | (uint32_t(buf[1]) << 8) | uint32_t(buf[2]);
-    displayValue(0, distance / 10000); // ųm to cm
-  }
+  await_reception(buf, sizeof buf);
+  digitalWrite(LED_BUILTIN, LOW);
+  uint32_t distance = uint32_t(buf[0]) << 16 | uint32_t(buf[1]) << 8 | uint32_t(buf[2]);
+  displayValue(0, distance / 10000); // ųm to cm
   delay(500);
 }

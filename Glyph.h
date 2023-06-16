@@ -4,14 +4,28 @@
 class Glyph {
   public:
     static uint8_t constexpr SEGS = 8;
-    static Glyph PROGMEM const digit[10];
-    static Glyph PROGMEM const overflow;
+    // Separate decimanl and hex arrays so that the latter is not linked in unless the main code references it.
+    static Glyph PROGMEM const dec_digit[10];
+    static Glyph PROGMEM const ABCDEF[6];
+    static Glyph PROGMEM const X;
     static Glyph PROGMEM const minus;
     static Glyph PROGMEM const plus;
     static Glyph PROGMEM const colon;
     static Glyph PROGMEM const pin[2];
 
+    static Glyph const& hex_digit_hi(uint8_t n) {
+      return hex_digit(n >> 4);
+    }
+
+    static Glyph const& hex_digit_lo(uint8_t n) {
+      return hex_digit(n & 0xF);
+    }
+
   private:
+    static Glyph const& hex_digit(uint8_t n) {
+      return n < 10 ? dec_digit[n] : ABCDEF[n - 10];
+    }
+
     byte const seg0;
     byte const seg1;
     byte const seg2;
@@ -21,11 +35,11 @@ class Glyph {
     byte const seg6;
     byte const seg7;
 
-    constexpr static bool pixel(char c) {
+    static constexpr bool pixel(char c) {
       return c != ' ';
     }
 
-    constexpr static byte extractSegAt(int x, const char* col_per_row) {
+    static constexpr byte extractSegAt(int x, const char* col_per_row) {
       return 0
              | pixel(col_per_row[x + SEGS * 0]) << 0
              | pixel(col_per_row[x + SEGS * 1]) << 1
@@ -60,7 +74,7 @@ class Glyph {
         case 5: return pgm_read_byte(&seg5);
         case 6: return pgm_read_byte(&seg6);
         case 7: return pgm_read_byte(&seg7);
-        default: return 0;
       }
+      __builtin_unreachable();
     }
 };
