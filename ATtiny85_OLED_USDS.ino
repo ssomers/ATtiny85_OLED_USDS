@@ -58,31 +58,39 @@ static void displayError(I2C::Status status) {
   if (status.errorlevel) {
     auto chat = OLED::QuarterChat<OLED_DEVICE> {3};
     GlyphsOnQuarter::sendTo(chat, Glyph::X);
-    GlyphsOnQuarter::send2hex(chat, status.errorlevel);
+    GlyphsOnQuarter::send3dec(chat, status.errorlevel);
     GlyphsOnQuarter::sendTo(chat, Glyph::X);
-    GlyphsOnQuarter::send2hex(chat, status.location);
+    GlyphsOnQuarter::send3dec(chat, status.location);
     GlyphsOnQuarter::sendTo(chat, Glyph::X);
     flashError(status);
   }
 }
 
 static void displayValue(uint8_t quarter, int value) {
-  uint8_t constexpr content_width = GlyphsOnQuarter::DIGIT_WIDTH * 4 + 3 + 2 * Glyph::SEGS;
-  uint8_t const displayed_width = quarter == 0 ? OLED::WIDTH : content_width;
-  auto chat = OLED::QuarterChat<OLED_DEVICE> {quarter, 0, uint8_t(displayed_width - 1)};
-  GlyphsOnQuarter::send4dec(chat, value);
+  bool heartbeat = false;
+  if (quarter == 0) {
+    static bool toggle = 0;
+    toggle ^= 1;
+    heartbeat = toggle;
+  }
+  uint8_t constexpr width = GlyphsOnQuarter::DIGIT_WIDTH * 4 + 3 + 2 * Glyph::SEGS;
+  auto chat = OLED::QuarterChat<OLED_DEVICE> {quarter, 0, uint8_t(width - 1)};
+  GlyphsOnQuarter::send4dec(chat, value, heartbeat);
   chat.sendSpacing(3);
   GlyphsOnQuarter::sendTo(chat, GlyphPair::cm.left);
   GlyphsOnQuarter::sendTo(chat, GlyphPair::cm.right);
-  if (quarter == 0) {
-    chat.sendSpacing(OLED::WIDTH - content_width - 2);
-    static bool toggle = 0;
-    toggle ^= 1;
-    for (uint8_t _ = 0; _ < 2; ++_) {
-      chat.send(0b1111 << (toggle * 2), 0);
+  displayError(chat.stop());
+}
+
+static void order_sample() {
+  for (;;) {
+    auto err = I2C::Chat<USDS_DEVICE> {7} .send(1).stop();
+    switch (err.errorlevel) {
+      case USI_TWI_OK: return;
+      case USI_TWI_NO_ACK_ON_ADDRESS: continue;
+      default: displayError(err);
     }
   }
-  displayError(chat.stop());
 }
 
 static void await_reception(uint8_t buf[], size_t len) {
@@ -102,7 +110,7 @@ void setup() {
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, HIGH);
   USI_TWI_Master_Initialise();
-  auto err = OLED::Chat<OLED_DEVICE>(0)
+  auto err = OLED::Chat<OLED_DEVICE> {0}
              .init()
              .set_addressing_mode(OLED::VerticalAddressing)
              .set_column_address()
@@ -116,13 +124,13 @@ void setup() {
 }
 
 void loop() {
-  displayError(I2C::Chat<USDS_DEVICE>(7).send(1).stop());
+  order_sample();
 
   digitalWrite(LED_BUILTIN, HIGH);
   uint8_t buf[3];
   await_reception(buf, sizeof buf);
   digitalWrite(LED_BUILTIN, LOW);
   uint32_t distance = uint32_t(buf[0]) << 16 | uint32_t(buf[1]) << 8 | uint32_t(buf[2]);
-  displayValue(0, distance / 10000); // ųm to cm
+  displayValue(0, (distance + 5000) / 10000); // ųm to cm
   delay(500);
 }
