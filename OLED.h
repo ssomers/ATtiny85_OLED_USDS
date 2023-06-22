@@ -77,14 +77,19 @@ class Chat : public I2C::Chat<Device> {
     }
 };
 
+// Dividing the display in four rows, each consisting of two RAM pages.
+enum Quarter : uint8_t {
+  A, B, C, D
+};
+
 // Data conversation with SSD 1306 addressing two consecutive pages.
 template <typename Device>
 class QuarterChat : public I2C::Chat<Device> {
     using super = I2C::Chat<Device>;
   public:
-    explicit QuarterChat(uint8_t quarter, uint8_t xBegin = 0, uint8_t xEnd = OLED::WIDTH - 1)
-      : I2C::Chat<Device> (
-          OLED::Chat<Device>(20)
+    explicit QuarterChat(uint8_t start_location, Quarter quarter, uint8_t xBegin = 0, uint8_t xEnd = OLED::WIDTH - 1)
+      : super(
+          OLED::Chat<Device>(start_location)
           .set_page_address(quarter * 2, quarter * 2 + 1)
           .set_column_address(xBegin, xEnd)
           .start_data()

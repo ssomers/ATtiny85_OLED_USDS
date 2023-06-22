@@ -10,6 +10,7 @@ class Glyph {
     static Glyph PROGMEM const dec_digit[10];
     static Glyph PROGMEM const ABCDEF[6];
     static Glyph PROGMEM const X;
+    static Glyph PROGMEM const at;
     static Glyph PROGMEM const minus;
     static Glyph PROGMEM const plus;
     static Glyph PROGMEM const colon;
@@ -40,31 +41,37 @@ class Glyph {
       return c != ' ';
     }
 
-    static constexpr byte extractSegAt(int x, const char* col_per_row, int glyph_index, int glyph_count) {
+    static constexpr byte extractSegAt(int x, const char* col_per_row, int segs_per_glyph, int glyph_index, int glyph_count) {
       return 0
-             | pixel(col_per_row[x + SEGS * (glyph_index + glyph_count * 0)]) << 0
-             | pixel(col_per_row[x + SEGS * (glyph_index + glyph_count * 1)]) << 1
-             | pixel(col_per_row[x + SEGS * (glyph_index + glyph_count * 2)]) << 2
-             | pixel(col_per_row[x + SEGS * (glyph_index + glyph_count * 3)]) << 3
-             | pixel(col_per_row[x + SEGS * (glyph_index + glyph_count * 4)]) << 4
-             | pixel(col_per_row[x + SEGS * (glyph_index + glyph_count * 5)]) << 5
-             | pixel(col_per_row[x + SEGS * (glyph_index + glyph_count * 6)]) << 6
-             | pixel(col_per_row[x + SEGS * (glyph_index + glyph_count * 7)]) << 7;
+             | pixel(col_per_row[x + segs_per_glyph * (glyph_index + glyph_count * 0)]) << 0
+             | pixel(col_per_row[x + segs_per_glyph * (glyph_index + glyph_count * 1)]) << 1
+             | pixel(col_per_row[x + segs_per_glyph * (glyph_index + glyph_count * 2)]) << 2
+             | pixel(col_per_row[x + segs_per_glyph * (glyph_index + glyph_count * 3)]) << 3
+             | pixel(col_per_row[x + segs_per_glyph * (glyph_index + glyph_count * 4)]) << 4
+             | pixel(col_per_row[x + segs_per_glyph * (glyph_index + glyph_count * 5)]) << 5
+             | pixel(col_per_row[x + segs_per_glyph * (glyph_index + glyph_count * 6)]) << 6
+             | pixel(col_per_row[x + segs_per_glyph * (glyph_index + glyph_count * 7)]) << 7;
     }
 
+    // Construct display food from ascii art.
     // Private to keep all instances in this class and as PROGMEM.
     constexpr Glyph(const char* col_per_row, int glyph_index = 0, int glyph_count = 1)
-      : seg0(extractSegAt(0, col_per_row, glyph_index, glyph_count))
-      , seg1(extractSegAt(1, col_per_row, glyph_index, glyph_count))
-      , seg2(extractSegAt(2, col_per_row, glyph_index, glyph_count))
-      , seg3(extractSegAt(3, col_per_row, glyph_index, glyph_count))
-      , seg4(extractSegAt(4, col_per_row, glyph_index, glyph_count))
-      , seg5(extractSegAt(5, col_per_row, glyph_index, glyph_count))
-      , seg6(extractSegAt(6, col_per_row, glyph_index, glyph_count))
-      , seg7(extractSegAt(7, col_per_row, glyph_index, glyph_count))
+      : seg0(extractSegAt(0, col_per_row, SEGS, glyph_index, glyph_count))
+      , seg1(extractSegAt(1, col_per_row, SEGS, glyph_index, glyph_count))
+      , seg2(extractSegAt(2, col_per_row, SEGS, glyph_index, glyph_count))
+      , seg3(extractSegAt(3, col_per_row, SEGS, glyph_index, glyph_count))
+      , seg4(extractSegAt(4, col_per_row, SEGS, glyph_index, glyph_count))
+      , seg5(extractSegAt(5, col_per_row, SEGS, glyph_index, glyph_count))
+      , seg6(extractSegAt(6, col_per_row, SEGS, glyph_index, glyph_count))
+      , seg7(extractSegAt(7, col_per_row, SEGS, glyph_index, glyph_count))
     {}
 
   public:
+    // Convert ascii art representing a column to display food.
+    static constexpr byte extractSeg(const char* col) {
+      return extractSegAt(0, col, 1, 0, 1);
+    }
+
     byte seg(uint8_t x) const {
       switch (x) {
         case 0: return pgm_read_byte(&seg0);
@@ -83,6 +90,8 @@ class Glyph {
 class GlyphPair {
   public:
     static GlyphPair PROGMEM const cm;
+    static GlyphPair PROGMEM const m;
+    static GlyphPair PROGMEM const err;
     static GlyphPair PROGMEM const pin;
 
     Glyph const left;

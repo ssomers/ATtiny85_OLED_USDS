@@ -14,15 +14,13 @@ struct OLED_DEVICE {
 
 struct USDS_DEVICE {
   static constexpr uint8_t ADDRESS { 0x57 };
-  static constexpr USI_TWI_Delay tHSTART { 5 };
+  static constexpr USI_TWI_Delay tHSTART { 0 };
   static constexpr USI_TWI_Delay tSSTOP { 0 };
-  static constexpr USI_TWI_Delay tIDLE { 5 };
-  static constexpr USI_TWI_Delay tPRE_SCL_HIGH { 5 };
-  static constexpr USI_TWI_Delay tPOST_SCL_HIGH { 5 };
+  static constexpr USI_TWI_Delay tIDLE { .6 };
+  static constexpr USI_TWI_Delay tPRE_SCL_HIGH { 3 };
+  static constexpr USI_TWI_Delay tPOST_SCL_HIGH { 1.5 };
   static constexpr USI_TWI_Delay tPOST_TRANSFER { 0 };
 };
-
-static int constexpr MICROS_PER_CM = 29;
 
 static void flashN(uint8_t number) {
   while (number >= 5) {
@@ -53,32 +51,56 @@ static void flashError(I2C::Status status) {
   }
 }
 
+static bool toggle_heartbeat(OLED::Quarter quarter) {
+  static uint8_t heartbeats = 0b0000;
+  heartbeats ^= 1 << quarter;
+  return heartbeats & 1 << quarter;
+}
+
 // Report error when we think we can display it.
 static void displayError(I2C::Status status) {
+  static bool toggle = false;
   if (status.errorlevel) {
-    auto chat = OLED::QuarterChat<OLED_DEVICE> {3};
-    GlyphsOnQuarter::sendTo(chat, Glyph::X);
+    toggle ^= true;
+    auto quarter = OLED::Quarter (2 + toggle);
+    auto chat = OLED::QuarterChat<OLED_DEVICE> {0, quarter};
+    GlyphsOnQuarter::sendTo(chat, GlyphPair::err.left, 3, toggle_heartbeat(quarter));
+    GlyphsOnQuarter::sendTo(chat, GlyphPair::err.right);
     GlyphsOnQuarter::send3dec(chat, status.errorlevel);
-    GlyphsOnQuarter::sendTo(chat, Glyph::X);
+    GlyphsOnQuarter::sendSpacingTo(chat, 3);
+    GlyphsOnQuarter::sendTo(chat, Glyph::at);
     GlyphsOnQuarter::send3dec(chat, status.location);
-    GlyphsOnQuarter::sendTo(chat, Glyph::X);
-    flashError(status);
   }
 }
 
-static void displayValue(uint8_t quarter, int value) {
-  bool heartbeat = false;
-  if (quarter == 0) {
-    static bool toggle = 0;
-    toggle ^= 1;
-    heartbeat = toggle;
-  }
-  uint8_t constexpr width = GlyphsOnQuarter::DIGIT_WIDTH * 4 + 3 + 2 * Glyph::SEGS;
-  auto chat = OLED::QuarterChat<OLED_DEVICE> {quarter, 0, uint8_t(width - 1)};
-  GlyphsOnQuarter::send4dec(chat, value, heartbeat);
-  chat.sendSpacing(3);
-  GlyphsOnQuarter::sendTo(chat, GlyphPair::cm.left);
-  GlyphsOnQuarter::sendTo(chat, GlyphPair::cm.right);
+static void displayMillimeter(OLED::Quarter quarter, uint32_t value) {
+  uint8_t constexpr width = GlyphsOnQuarter::DIGIT_WIDTH * 7 + GlyphsOnQuarter::POINT_WIDTH  + 2 * Glyph::SEGS;
+  auto chat = OLED::QuarterChat<OLED_DEVICE> {10, quarter, 0, uint8_t(width - 1)};
+  uint8_t decimal3 = value % 10;
+  value /= 10;
+  uint8_t decimal2 = value % 10;
+  value /= 10;
+  uint8_t decimal1 = value % 10;
+  value /= 10;
+  GlyphsOnQuarter::send4dec(chat, value, toggle_heartbeat(quarter));
+  GlyphsOnQuarter::sendPointTo(chat);
+  GlyphsOnQuarter::sendTo(chat, Glyph::dec_digit[decimal1]);
+  GlyphsOnQuarter::sendTo(chat, Glyph::dec_digit[decimal2]);
+  GlyphsOnQuarter::sendTo(chat, Glyph::dec_digit[decimal3]);
+  GlyphsOnQuarter::sendTo(chat, GlyphPair::m.left);
+  GlyphsOnQuarter::sendTo(chat, GlyphPair::m.right);
+  displayError(chat.stop());
+}
+
+static void displayBytes(OLED::Quarter quarter, uint8_t buf[3]) {
+  uint8_t constexpr width = 3 * Glyph::SEGS + 6 * GlyphsOnQuarter::DIGIT_WIDTH;
+  auto chat = OLED::QuarterChat<OLED_DEVICE> {20, quarter, 0, uint8_t(width - 1)};
+  GlyphsOnQuarter::sendTo(chat, Glyph::colon, 0, toggle_heartbeat(quarter));
+  GlyphsOnQuarter::send2hex(chat, buf[0]);
+  GlyphsOnQuarter::sendTo(chat, Glyph::colon);
+  GlyphsOnQuarter::send2hex(chat, buf[1]);
+  GlyphsOnQuarter::sendTo(chat, Glyph::colon);
+  GlyphsOnQuarter::send2hex(chat, buf[2]);
   displayError(chat.stop());
 }
 
@@ -126,11 +148,12 @@ void setup() {
 void loop() {
   order_sample();
 
-  digitalWrite(LED_BUILTIN, HIGH);
   uint8_t buf[3];
+  digitalWrite(LED_BUILTIN, HIGH);
   await_reception(buf, sizeof buf);
   digitalWrite(LED_BUILTIN, LOW);
+  displayBytes(OLED::Quarter::B, buf);
   uint32_t distance = uint32_t(buf[0]) << 16 | uint32_t(buf[1]) << 8 | uint32_t(buf[2]);
-  displayValue(0, (distance + 5000) / 10000); // ųm to cm
+  displayMillimeter(OLED::Quarter::A, (distance + 500) / 1000); // ųm to mm
   delay(500);
 }
