@@ -78,7 +78,7 @@ class Chat : public I2C::Chat<Device> {
 };
 
 // Dividing the display in four rows, each consisting of two RAM pages.
-enum Quarter : uint8_t {
+enum class Quarter : uint8_t {
   A, B, C, D
 };
 
@@ -90,7 +90,7 @@ class QuarterChat : public I2C::Chat<Device> {
     explicit QuarterChat(uint8_t start_location, Quarter quarter, uint8_t xBegin = 0, uint8_t xEnd = OLED::WIDTH - 1)
       : super(
           OLED::Chat<Device>(start_location)
-          .set_page_address(quarter * 2, quarter * 2 + 1)
+          .set_page_address(static_cast<uint8_t>(quarter) * 2, static_cast<uint8_t>(quarter) * 2 + 1)
           .set_column_address(xBegin, xEnd)
           .start_data()
         ) {
@@ -100,14 +100,6 @@ class QuarterChat : public I2C::Chat<Device> {
     QuarterChat& send(byte b1, byte b2) {
       super::send(b1);
       super::send(b2);
-      return *this;
-    }
-
-    // Send empty columns.
-    QuarterChat& sendSpacing(uint8_t width) {
-      for (uint8_t i = 0; i < width; ++i) {
-        send(0, 0);
-      }
       return *this;
     }
 };

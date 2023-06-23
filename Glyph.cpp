@@ -174,17 +174,6 @@ Glyph PROGMEM const Glyph::at = {
   "  ##### "
 };
 
-Glyph PROGMEM const Glyph::minus = {
-  "        "
-  "        "
-  "        "
-  " ###### "
-  " ###### "
-  "        "
-  "        "
-  "        "
-};
-
 Glyph PROGMEM const Glyph::plus = {
   "        "
   "        "
@@ -193,17 +182,6 @@ Glyph PROGMEM const Glyph::plus = {
   "  ##### "
   "    #   "
   "    #   "
-  "        "
-};
-
-Glyph PROGMEM const Glyph::colon = {
-  "        "
-  "   ##   "
-  "   ##   "
-  "        "
-  "        "
-  "   ##   "
-  "   ##   "
   "        "
 };
 

@@ -51,56 +51,50 @@ static void flashError(I2C::Status status) {
   }
 }
 
-static bool toggle_heartbeat(OLED::Quarter quarter) {
-  static uint8_t heartbeats = 0b0000;
-  heartbeats ^= 1 << quarter;
-  return heartbeats & 1 << quarter;
-}
-
 // Report error when we think we can display it.
 static void displayError(I2C::Status status) {
   static bool toggle = false;
   if (status.errorlevel) {
     toggle ^= true;
     auto quarter = OLED::Quarter (2 + toggle);
-    auto chat = OLED::QuarterChat<OLED_DEVICE> {0, quarter};
-    GlyphsOnQuarter::sendTo(chat, GlyphPair::err.left, 3, toggle_heartbeat(quarter));
-    GlyphsOnQuarter::sendTo(chat, GlyphPair::err.right);
-    GlyphsOnQuarter::send3dec(chat, status.errorlevel);
-    GlyphsOnQuarter::sendSpacingTo(chat, 3);
-    GlyphsOnQuarter::sendTo(chat, Glyph::at);
-    GlyphsOnQuarter::send3dec(chat, status.location);
+    auto chat = GlyphsOnQuarter<OLED_DEVICE> {0, quarter};
+    chat.sendSpacing(3);
+    chat.send(GlyphPair::err.left);
+    chat.send(GlyphPair::err.right);
+    chat.send3dec(status.errorlevel);
+    chat.sendSpacing(3);
+    chat.send(Glyph::at);
+    chat.send3dec(status.location);
   }
 }
 
 static void displayMillimeter(OLED::Quarter quarter, uint32_t value) {
-  uint8_t constexpr width = GlyphsOnQuarter::DIGIT_WIDTH * 7 + GlyphsOnQuarter::POINT_WIDTH  + 2 * Glyph::SEGS;
-  auto chat = OLED::QuarterChat<OLED_DEVICE> {10, quarter, 0, uint8_t(width - 1)};
+  uint8_t constexpr width = Glyph::DIGIT_WIDTH * 7 + Glyph::POINT_WIDTH  + 2 * Glyph::SEGS;
+  auto chat = GlyphsOnQuarter<OLED_DEVICE> {10, quarter, 0, uint8_t(width - 1)};
   uint8_t decimal3 = value % 10;
   value /= 10;
   uint8_t decimal2 = value % 10;
   value /= 10;
   uint8_t decimal1 = value % 10;
   value /= 10;
-  GlyphsOnQuarter::send4dec(chat, value, toggle_heartbeat(quarter));
-  GlyphsOnQuarter::sendPointTo(chat);
-  GlyphsOnQuarter::sendTo(chat, Glyph::dec_digit[decimal1]);
-  GlyphsOnQuarter::sendTo(chat, Glyph::dec_digit[decimal2]);
-  GlyphsOnQuarter::sendTo(chat, Glyph::dec_digit[decimal3]);
-  GlyphsOnQuarter::sendTo(chat, GlyphPair::m.left);
-  GlyphsOnQuarter::sendTo(chat, GlyphPair::m.right);
+  chat.send4dec(value);
+  chat.sendPoint();
+  chat.send(Glyph::dec_digit[decimal1]);
+  chat.send(Glyph::dec_digit[decimal2]);
+  chat.send(Glyph::dec_digit[decimal3]);
+  chat.send(GlyphPair::m.left);
+  chat.send(GlyphPair::m.right);
   displayError(chat.stop());
 }
 
 static void displayBytes(OLED::Quarter quarter, uint8_t buf[3]) {
-  uint8_t constexpr width = 3 * Glyph::SEGS + 6 * GlyphsOnQuarter::DIGIT_WIDTH;
-  auto chat = OLED::QuarterChat<OLED_DEVICE> {20, quarter, 0, uint8_t(width - 1)};
-  GlyphsOnQuarter::sendTo(chat, Glyph::colon, 0, toggle_heartbeat(quarter));
-  GlyphsOnQuarter::send2hex(chat, buf[0]);
-  GlyphsOnQuarter::sendTo(chat, Glyph::colon);
-  GlyphsOnQuarter::send2hex(chat, buf[1]);
-  GlyphsOnQuarter::sendTo(chat, Glyph::colon);
-  GlyphsOnQuarter::send2hex(chat, buf[2]);
+  uint8_t constexpr width = 6 * Glyph::DIGIT_WIDTH + 2 * Glyph::COLON_WIDTH;
+  auto chat = GlyphsOnQuarter<OLED_DEVICE> {20, quarter, OLED::WIDTH - width, OLED::WIDTH - 1, false};
+  chat.send2hex(buf[0]);
+  chat.sendColon();
+  chat.send2hex(buf[1]);
+  chat.sendColon();
+  chat.send2hex(buf[2]);
   displayError(chat.stop());
 }
 
