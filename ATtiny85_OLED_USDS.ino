@@ -39,37 +39,36 @@ static void flashN(uint8_t number) {
   }
 }
 
-// Report error when the display isn't set up.
+// Report an error while the display isn't set up.
 static void flashError(I2C::Status status) {
-  if (status.errorlevel) {
+  if (status.error) {
     for (;;) {
       delay(1200);
-      flashN(status.errorlevel);
+      flashN(status.error);
       delay(600);
       flashN(status.location);
     }
   }
 }
 
-// Report error when we think we can display it.
+// Report an error while we think we can display it.
 static void displayError(I2C::Status status) {
-  static bool toggle = false;
-  if (status.errorlevel) {
-    toggle ^= true;
-    auto quarter = OLED::Quarter (2 + toggle);
-    auto chat = GlyphsOnQuarter<OLED_DEVICE> {0, quarter};
-    chat.sendSpacing(3);
+  static uint8_t last_line = 0;
+  if (status.error) {
+    if (++last_line == 4) last_line = 1;
+    auto chat = GlyphsOnQuarter<OLED_DEVICE> {0, OLED::Quarter(last_line)};
+    chat.send(0, 3);
     chat.send(GlyphPair::err.left);
     chat.send(GlyphPair::err.right);
-    chat.send3dec(status.errorlevel);
-    chat.sendSpacing(3);
+    chat.send3dec(status.error);
+    chat.send(0, 3);
     chat.send(Glyph::at);
     chat.send3dec(status.location);
   }
 }
 
-static void displayMillimeter(OLED::Quarter quarter, uint32_t value) {
-  uint8_t constexpr width = Glyph::DIGIT_WIDTH * 7 + Glyph::POINT_WIDTH  + 2 * Glyph::SEGS;
+static void displayMillimeter(OLED::Quarter quarter, uint16_t value) {
+  uint8_t constexpr width = Glyph::DIGIT_WIDTH * 5 + Glyph::POINT_WIDTH + GlyphPair::WIDTH;
   auto chat = GlyphsOnQuarter<OLED_DEVICE> {10, quarter, 0, uint8_t(width - 1)};
   uint8_t decimal3 = value % 10;
   value /= 10;
@@ -77,7 +76,16 @@ static void displayMillimeter(OLED::Quarter quarter, uint32_t value) {
   value /= 10;
   uint8_t decimal1 = value % 10;
   value /= 10;
-  chat.send4dec(value);
+  uint8_t unit = value % 10;
+  value /= 10;
+  if (value == 0) {
+    chat.send(0, Glyph::DIGIT_WIDTH);
+  } else if (value < 10) {
+    chat.send(Glyph::dec_digit[value]);
+  } else {
+    chat.send(~0, Glyph::DIGIT_WIDTH);
+  }
+  chat.send(Glyph::dec_digit[unit]);
   chat.sendPoint();
   chat.send(Glyph::dec_digit[decimal1]);
   chat.send(Glyph::dec_digit[decimal2]);
@@ -87,26 +95,24 @@ static void displayMillimeter(OLED::Quarter quarter, uint32_t value) {
   displayError(chat.stop());
 }
 
-static void displayBytes(OLED::Quarter quarter, uint8_t buf[3]) {
-  uint8_t constexpr width = 6 * Glyph::DIGIT_WIDTH + 2 * Glyph::COLON_WIDTH;
-  auto chat = GlyphsOnQuarter<OLED_DEVICE> {20, quarter, OLED::WIDTH - width, OLED::WIDTH - 1, false};
-  chat.send2hex(buf[0]);
-  chat.sendColon();
-  chat.send2hex(buf[1]);
-  chat.sendColon();
-  chat.send2hex(buf[2]);
-  displayError(chat.stop());
-}
-
 static void order_sample() {
   for (;;) {
     auto err = I2C::Chat<USDS_DEVICE> {7} .send(1).stop();
-    switch (err.errorlevel) {
+    switch (err.error) {
       case USI_TWI_OK: return;
       case USI_TWI_NO_ACK_ON_ADDRESS: continue;
       default: displayError(err);
     }
   }
+}
+
+static void displayBytes(OLED::Quarter quarter, uint8_t buf[3]) {
+  uint8_t constexpr width = 6 * Glyph::DIGIT_WIDTH;
+  auto chat = GlyphsOnQuarter<OLED_DEVICE> {20, quarter, OLED::WIDTH - width, OLED::WIDTH - 1, false};
+  chat.send2hex(buf[0]);
+  chat.send2hex(buf[1]);
+  chat.send2hex(buf[2]);
+  displayError(chat.stop());
 }
 
 static void await_reception(uint8_t buf[], size_t len) {
@@ -131,6 +137,7 @@ void setup() {
              .set_addressing_mode(OLED::VerticalAddressing)
              .set_column_address()
              .set_page_address()
+             .set_contrast(255)
              .set_enabled()
              .start_data()
              .sendN(OLED::BYTES, 0)
@@ -147,7 +154,10 @@ void loop() {
   await_reception(buf, sizeof buf);
   digitalWrite(LED_BUILTIN, LOW);
   displayBytes(OLED::Quarter::B, buf);
+  // It's not worth while to have the 3rd byte of the micrometer value, but the device
+  // gets angry if we don't read all three. And we need more than 16 bits to scale the
+  // number using integer arithmetic.
   uint32_t distance = uint32_t(buf[0]) << 16 | uint32_t(buf[1]) << 8 | uint32_t(buf[2]);
-  displayMillimeter(OLED::Quarter::A, (distance + 500) / 1000); // ųm to mm
+  displayMillimeter(OLED::Quarter::A, uint16_t((distance + 500) / 1000)); // ųm to mm
   delay(500);
 }

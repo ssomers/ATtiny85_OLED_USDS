@@ -17,15 +17,16 @@ class GlyphsOnQuarter : public OLED::QuarterChat<Device> {
     bool toggle_heartbeat() {
       if (include_heartbeat) {
         include_heartbeat = false;
-        static uint8_t heartbeats = 0b0000;
-        heartbeats ^= quarter_bit;
-        return heartbeats & quarter_bit;
+        static uint8_t heartbeat_per_quarter = 0b0000;
+        heartbeat_per_quarter ^= quarter_bit;
+        return heartbeat_per_quarter & quarter_bit;
       } else {
         return false;
       }
     }
 
   public:
+    // start_location is merely the initial value of a counter for error reporting.
     explicit GlyphsOnQuarter(uint8_t start_location,
                              OLED::Quarter quarter, uint8_t xBegin = 0, uint8_t xEnd = OLED::WIDTH - 1,
                              bool include_heartbeat = true)
@@ -34,100 +35,100 @@ class GlyphsOnQuarter : public OLED::QuarterChat<Device> {
       , include_heartbeat(include_heartbeat) {
     }
 
-    void send(byte seg) {
-      bool heartbeat = toggle_heartbeat();
-      super::send(seg << 4 | (heartbeat ? HEARTBEAT_SEG1 : 0),
-                  seg >> 4 | (heartbeat ? HEARTBEAT_SEG2 : 0));
+    GlyphsOnQuarter& send(byte seg, uint8_t times = 1) {
+      for (uint8_t x = 0; x < times; ++x) {
+        if (toggle_heartbeat()) {
+          super::send(seg << 4 | HEARTBEAT_SEG1,
+                      seg >> 4 | HEARTBEAT_SEG2);
+        } else {
+          super::send(seg << 4,
+                      seg >> 4);
+        }
+      }
+      return *this;
     }
 
-    void send(Glyph const & glyph, uint8_t margin = 0) {
-      sendSpacing(margin);
+    GlyphsOnQuarter& send(Glyph const& glyph, uint8_t margin = 0) {
+      send(0, margin);
       for (uint8_t x = 0; x < Glyph::SEGS; ++x) {
         send(glyph.seg(x));
       }
-      sendSpacing(margin);
+      send(0, margin);
+      return *this;
     }
 
-    void sendSpacing(uint8_t width) {
-      for (uint8_t i = 0; i < width; ++i) {
-        send(0);
-      }
+    GlyphsOnQuarter& sendColon() {
+      send(0, Glyph::DIGIT_MARGIN);
+      send(Glyph::COLON_SEG, Glyph::POINT_WIDTH - 2 * Glyph::DIGIT_MARGIN);
+      send(0, Glyph::DIGIT_MARGIN);
+      return *this;
     }
 
-    void sendColon() {
-      sendSpacing(Glyph::DIGIT_MARGIN);
-      for (int x = 0; x < Glyph::POINT_WIDTH - 2 * Glyph::DIGIT_MARGIN; ++x) {
-        send(Glyph::COLON_SEG);
-      }
-      sendSpacing(Glyph::DIGIT_MARGIN);
+    GlyphsOnQuarter& sendPoint() {
+      send(0, Glyph::DIGIT_MARGIN);
+      send(Glyph::POINT_SEG, Glyph::POINT_WIDTH - 2 * Glyph::DIGIT_MARGIN);
+      send(0, Glyph::DIGIT_MARGIN);
+      return *this;
     }
 
-    void sendPoint() {
-      sendSpacing(Glyph::DIGIT_MARGIN);
-      for (int x = 0; x < Glyph::POINT_WIDTH - 2 * Glyph::DIGIT_MARGIN; ++x) {
-        send(Glyph::POINT_SEG);
-      }
-      sendSpacing(Glyph::DIGIT_MARGIN);
-    }
-
-    void send2hex(uint8_t number) {
+    GlyphsOnQuarter& send2hex(uint8_t number) {
       send(Glyph::hex_digit_hi(number), Glyph::DIGIT_MARGIN);
       send(Glyph::hex_digit_lo(number), Glyph::DIGIT_MARGIN);
+      return *this;
     }
 
-    void send4hex(uint16_t number) {
+    GlyphsOnQuarter& send4hex(uint16_t number) {
       send(Glyph::hex_digit_hi(uint8_t(number >> 8)), Glyph::DIGIT_MARGIN);
       send(Glyph::hex_digit_lo(uint8_t(number >> 8)), Glyph::DIGIT_MARGIN);
-      send(Glyph::hex_digit_hi(uint8_t(number)), Glyph::DIGIT_MARGIN);
-      send(Glyph::hex_digit_lo(uint8_t(number)), Glyph::DIGIT_MARGIN);
+      send(Glyph::hex_digit_hi(uint8_t(number >> 0)), Glyph::DIGIT_MARGIN);
+      send(Glyph::hex_digit_lo(uint8_t(number >> 0)), Glyph::DIGIT_MARGIN);
+      return *this;
     }
 
-    void send3dec(uint8_t number) {
+    GlyphsOnQuarter& send3dec(uint8_t number) {
       uint8_t p1 = number / 100;
       uint8_t p2 = number % 100;
       if (p1 != 0) {
         send(Glyph::dec_digit[p1], Glyph:: DIGIT_MARGIN);
       } else {
-        sendSpacing(Glyph::DIGIT_WIDTH);
+        send(0, Glyph::DIGIT_WIDTH);
       }
       if (p1 != 0 || p2 >= 10) {
         send(Glyph::dec_digit[p2 / 10], Glyph::DIGIT_MARGIN);
       } else {
-        sendSpacing(Glyph::DIGIT_WIDTH);
+        send(0, Glyph::DIGIT_WIDTH);
       }
       send(Glyph::dec_digit[p2 % 10], Glyph::DIGIT_MARGIN);
+      return *this;
     }
 
-    void send4dec(int number) {
+    GlyphsOnQuarter& send4dec(int number) {
       if (number < 0) {
-        for (uint8_t x = 0; x < Glyph::DIGIT_WIDTH * 4; ++x) {
-          send(Glyph::MINUS_SEG);
-        }
-        return;
+        send(Glyph::MINUS_SEG, Glyph::DIGIT_WIDTH * 4);
+        return *this;
       }
       uint8_t p1 = number / 100;
       uint8_t p2 = number % 100;
       if (p1 >= 100) {
-        for (uint8_t x = 0; x < Glyph::DIGIT_WIDTH * 4; ++x) {
-          send(0xFF);
-        }
-        return;
+        send(~0, Glyph::DIGIT_WIDTH * 4);
+        return *this;
       }
       if (p1 >= 10) {
         send(Glyph::dec_digit[p1 / 10], Glyph::DIGIT_MARGIN);
       } else {
-        sendSpacing(Glyph::DIGIT_WIDTH);
+        send(0, Glyph::DIGIT_WIDTH);
       }
       if (p1 != 0) {
         send(Glyph::dec_digit[p1 % 10], Glyph::DIGIT_MARGIN);
       } else {
-        sendSpacing(Glyph::DIGIT_WIDTH);
+        send(0, Glyph::DIGIT_WIDTH);
       }
       if (p1 != 0 || p2 >= 10) {
         send(Glyph::dec_digit[p2 / 10], Glyph::DIGIT_MARGIN);
       } else {
-        sendSpacing(Glyph::DIGIT_WIDTH);
+        send(0, Glyph::DIGIT_WIDTH);
       }
       send(Glyph::dec_digit[p2 % 10], Glyph::DIGIT_MARGIN);
+      return *this;
     }
 };
